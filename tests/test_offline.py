@@ -23,7 +23,7 @@ def test_demo_output_is_plain_text(capsys):
     demo.main(["--defect"])
     out = capsys.readouterr().out
     assert "\x1b[" not in out
-    assert "—" not in out and "–" not in out
+    assert chr(0x2014) not in out and chr(0x2013) not in out  # em and en dash
     assert all(line == line.rstrip() for line in out.splitlines())
 
 
