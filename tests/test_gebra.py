@@ -1,3 +1,4 @@
+from importlib.metadata import version
 from pathlib import Path
 
 import pytest
@@ -6,6 +7,19 @@ from ontology_gate.checks import CONFIGURATIONS, main, run_gebra, write_sidecar
 from ontology_gate.graph import build_graph, build_workflow
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_gebra_version_is_the_one_the_limits_describe():
+    # The bypass row, notebook Part D and the README limits describe gebra 0.1.1.
+    if version("gebra") != "0.1.1":
+        pytest.fail("gebra upgraded: review the bypass row, notebook Part D and the README limits")
+
+
+def test_bypass_passes_on_this_gebra():
+    # gebra 0.1.1 does not check that every write passes through the gate's ALLOW branch.
+    outcome = run_gebra(build_graph("bypass"), ROOT / "gebra.toml")
+    for pid in ("P-01", "P-02", "P-04", "P-06", "P-08"):
+        assert outcome[pid] == ("pass", None), pid
 
 
 @pytest.mark.parametrize("config", CONFIGURATIONS, ids=[c.label for c in CONFIGURATIONS])

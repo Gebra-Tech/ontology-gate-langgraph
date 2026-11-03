@@ -133,10 +133,10 @@ this agent:
   the protection are declarations, and gebra trusts them.
 
 Step 2 of compass_ai's next steps creates the repair loop, which is what P-02 looks at. Step 1
-puts the write after ALLOW, which is what P-06 looks at. In [`gebra.toml`](gebra.toml) the loop
-variant sits on `gate`, the node that increments `repair_attempts`, and `commit_refund` is
-tagged `billable` and `irreversible`. The extra sidecars in [`sidecars/`](sidecars) cover the
-other configurations.
+puts the write after ALLOW, which also takes it out of the loop; P-06 looks at the loop, not at
+the gate. In [`gebra.toml`](gebra.toml) the loop variant sits on `gate`, the node that
+increments `repair_attempts`, and `commit_refund` is tagged `billable` and `irreversible`. The
+extra sidecars in [`sidecars/`](sidecars) cover the other configurations.
 
 `make check` output, verbatim:
 
@@ -168,7 +168,7 @@ findings
   uncapped, gebra.toml: none
     limit: the declared bound is trusted, but the router no longer enforces it
   bypass, gebra.toml: none
-    limit: gebra does not check that every write passes through the gate
+    pass (gate ordering not checked in 0.1.1; planned)
 
 extraction warnings on the correct graph with gebra.toml: contract-defaulted x3, contract-inferred x4
   (gebra inferred or defaulted these contract slots; warnings never change a result)
@@ -184,9 +184,10 @@ How to read it:
 - **The write.** In the defect graph P-06 reports `execute_refund`: it is billable and
   irreversible, and the graph reaches it again on every repair. The finding is
   `unprotected-effect-in-cycle` rather than `-in-retry-region` because the lap reaches the write
-  through the agent, not by routing straight back to it. Moving the write after ALLOW clears it.
-  Declaring an idempotency key on `order_id` clears it too, but that is a declaration only: the
-  demo code does not deduplicate, and the defect graph still pays three times.
+  through the agent, not by routing straight back to it. Moving the write after ALLOW clears it,
+  because the write is then outside the loop. Declaring an idempotency key on `order_id` clears
+  it too, but that is a declaration only: the demo code does not deduplicate, and the defect
+  graph still pays three times.
 - **The exit.** The `no-escalate` graph never routes to `human_review`, and P-01 reports the
   node as unreachable. Where P-01 fails, gebra treats the other topology results for that graph
   as best effort.
@@ -205,9 +206,25 @@ How to read it:
 
 - **The ontology and the business rules.** Whether the shapes are right, whether a refund makes
   sense, whether the knowledge base is true: that is the gate's job, at run time.
-- **That every write passes through the gate.** The `bypass` graph sends refunds under 50 from
-  the agent straight to `commit_refund`. gebra passes it, and a refund approved by the AI agent
-  is paid (see `tests/test_graph.py`).
+- **That every write passes through the gate's ALLOW branch.** gebra 0.1.1 misses the bypass
+  edge shown below; a planned check on gebra's roadmap is meant to cover this rule.
+
+  In the `bypass` graph, refunds under 50 go from the agent straight to the write, and in
+  `tests/test_graph.py` a refund approved by the AI agent is paid this way. The edge:
+
+  ```python
+  workflow.add_conditional_edges(
+      "agent", route_after_agent, {"shortcut": "commit_refund", "check": "gate"}
+  )
+  ```
+
+  The bypass row, as `make check` prints it:
+
+  ```text
+  bypass, gebra.toml                pass  pass  pass  pass  pass  yes
+    bypass, gebra.toml: none
+      pass (gate ordering not checked in 0.1.1; planned)
+  ```
 - **That a declared bound is enforced.** The `uncapped` graph keeps the loop variant but its
   router ignores `MAX_REPAIRS`. gebra passes it, and the duplicate-refund case runs until
   LangGraph's recursion limit stops it.
@@ -229,11 +246,11 @@ the later parts work for everyone.
 | Student | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Gebra-Tech/ontology-gate-langgraph/blob/main/notebooks/refund_gate_STUDENT.ipynb) |
 | Solution | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Gebra-Tech/ontology-gate-langgraph/blob/main/notebooks/refund_gate_SOLUTION.ipynb) |
 
-Parts: A, the gate as a node; B, the repair loop (P-01 and P-02); C, where the write goes (P-06);
-D, what gebra can't see. The setup cell installs this package from GitHub when it is missing, so
-the notebooks run in Colab as they are. The STUDENT notebook is generated from the SOLUTION
-notebook by `tools/make_student.py` (`make notebooks`), and a test checks that the committed copy
-matches a fresh build.
+Parts: A, the gate as a node; B, the repair loop (P-01 and P-02); C, where the write goes (P-06
+reports it while it sits inside the loop); D, what gebra can't see. The setup cell installs this
+package from GitHub when it is missing, so the notebooks run in Colab as they are. The STUDENT
+notebook is generated from the SOLUTION notebook by `tools/make_student.py` (`make notebooks`),
+and a test checks that the committed copy matches a fresh build.
 
 ## Optional live mode
 

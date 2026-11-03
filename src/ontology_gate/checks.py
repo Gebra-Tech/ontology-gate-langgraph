@@ -151,7 +151,7 @@ CONFIGURATIONS = (
         "bypass",
         "gebra.toml",
         _expect(),
-        "limit: gebra does not check that every write passes through the gate",
+        "pass (gate ordering not checked in 0.1.1; planned)",
     ),
 )
 
