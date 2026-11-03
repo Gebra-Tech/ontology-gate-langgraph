@@ -33,7 +33,7 @@ Outcome = tuple[str, str | None]
 
 
 def run_gebra(graph, sidecar_path: str | Path) -> dict:
-    """Extract ``graph`` with an explicit sidecar and verify it.
+    """Extract ``graph`` with an explicit sidecar and run gebra's checks on it.
 
     Returns ``{property id: (result, failure code or None)}`` for P-01, P-02, P-04, P-06 and
     P-08, plus ``"locations"`` (property id -> nodes named by the failure) and ``"warnings"``
