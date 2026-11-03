@@ -1,0 +1,9 @@
+# The defect graph (build_graph("defect")): the refund is paid inside the repair loop.
+schema = "gebra-sidecar-v1"
+
+[nodes.gate.variant]
+key = "repair_attempts"
+measure = "MAX_REPAIRS - repair_attempts: gate adds 1 to repair_attempts on every BLOCK, and route_after_gate sends the run to human_review once it reaches MAX_REPAIRS (3)"
+
+[nodes.execute_refund]
+effects = ["billable", "irreversible"]

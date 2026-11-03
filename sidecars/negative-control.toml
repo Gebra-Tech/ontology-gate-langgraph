@@ -1,0 +1,10 @@
+# A negative control: the loop variant names a key the state does not have.
+# gebra must not count this as a bound, so P-02 should not pass.
+schema = "gebra-sidecar-v1"
+
+[nodes.gate.variant]
+key = "repair_budget"
+measure = "a key that does not exist in RefundState"
+
+[nodes.commit_refund]
+effects = ["billable", "irreversible"]

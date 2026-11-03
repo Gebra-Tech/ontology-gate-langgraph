@@ -1,0 +1,2 @@
+# No declarations at all: what gebra reports when nothing is declared.
+schema = "gebra-sidecar-v1"

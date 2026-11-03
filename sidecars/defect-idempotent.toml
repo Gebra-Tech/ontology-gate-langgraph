@@ -1,0 +1,13 @@
+# The defect graph again, now declaring an idempotency key on the write.
+# gebra accepts the key because execute_refund declares that it reads order_id.
+# Whether the payment provider really deduplicates on order_id is not something gebra checks.
+schema = "gebra-sidecar-v1"
+
+[nodes.gate.variant]
+key = "repair_attempts"
+measure = "MAX_REPAIRS - repair_attempts: gate adds 1 to repair_attempts on every BLOCK, and route_after_gate sends the run to human_review once it reaches MAX_REPAIRS (3)"
+
+[nodes.execute_refund]
+reads = ["case", "order_id", "proposal"]
+effects = ["billable", "irreversible"]
+idempotent = { key = "order_id" }

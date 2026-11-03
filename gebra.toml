@@ -1,0 +1,13 @@
+# gebra declarations for the correct refund graph (build_graph("correct")).
+# gebra records these and trusts them: it never checks that they are true.
+schema = "gebra-sidecar-v1"
+
+# The repair loop agent -> gate -> agent. The bound is declared on gate, the node that
+# increments repair_attempts, so it covers every simple cycle through gate.
+[nodes.gate.variant]
+key = "repair_attempts"
+measure = "MAX_REPAIRS - repair_attempts: gate adds 1 to repair_attempts on every BLOCK, and route_after_gate sends the run to human_review once it reaches MAX_REPAIRS (3)"
+
+# The write. Paying a refund costs money and cannot be taken back.
+[nodes.commit_refund]
+effects = ["billable", "irreversible"]
