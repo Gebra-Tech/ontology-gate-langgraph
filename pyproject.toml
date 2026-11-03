@@ -1,0 +1,55 @@
+[build-system]
+requires = ["hatchling>=1.26"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ontology-gate-langgraph"
+version = "0.1.0"
+description = "LangGraph refund agent with an ontology gate at runtime and gebra structural checks before the run"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.12,<3.14"
+authors = [{ name = "Hesam Shams" }]
+keywords = ["langgraph", "ontology", "shacl", "rdf", "ai-agents", "guardrails"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Intended Audience :: Education",
+]
+dependencies = [
+    "gebra==0.1.1",
+    "langgraph>=1,<2",
+    "langchain-core>=1,<2",
+    "rdflib",
+    "owlrl",
+    "pyshacl",
+    "pydantic>=2.11",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "ruff", "nbformat", "nbclient", "ipykernel"]
+live = ["langchain-anthropic"]
+
+[project.urls]
+Source = "https://github.com/Gebra-Tech/ontology-gate-langgraph"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ontology_gate"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests", "tools"]
+extend-exclude = ["notebooks/refund_gate_STUDENT.ipynb"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.ruff.lint.per-file-ignores]
+"*.ipynb" = ["E402"]
