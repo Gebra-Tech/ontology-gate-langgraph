@@ -349,8 +349,10 @@ the later parts work for everyone.
 | Solution | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Gebra-Tech/ontology-gate-langgraph/blob/main/notebooks/refund_gate_SOLUTION.ipynb) |
 
 Parts: A, the gate as a node; B, the repair loop (P-01 and P-02); C, where the write goes (P-06
-reports it while it sits inside the loop); D, what gebra can't see. The setup cell installs this
-package from GitHub when it is missing, so the notebooks run in Colab as they are. The STUDENT
+reports it while it sits inside the loop); D, what gebra can't see. The setup cell installs the
+tagged release `v0.2.0` of this package from GitHub when it is missing, so the notebooks run in
+Colab as they are. The release pins gebra, LangGraph, langchain-core, Pydantic, rdflib, OWL-RL
+and pySHACL to the exact versions in [`pyproject.toml`](pyproject.toml). The STUDENT
 notebook is generated from the SOLUTION notebook by `tools/make_student.py` (`make notebooks`),
 and a test checks that the committed copy matches a fresh build.
 

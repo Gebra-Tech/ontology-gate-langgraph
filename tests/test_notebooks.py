@@ -104,3 +104,18 @@ def test_blank_markers():
     assert make_student.blank_source(source) == "X = ____\ndef f():\n    ____\nY = 2"
     with pytest.raises(ValueError):
         make_student.blank_source("print('x')  # BLANK")
+
+
+def test_setup_cell_installs_the_tagged_release():
+    import tomllib
+
+    import ontology_gate
+
+    version = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"][
+        "version"
+    ]
+    assert ontology_gate.__version__ == version
+    for path in NOTEBOOKS.glob("*.ipynb"):
+        setup = nbformat.read(path, as_version=4).cells[2].source
+        assert f'ontology-gate-langgraph@v{version}"' in setup, path.name
+        assert "@main" not in setup, path.name
