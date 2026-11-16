@@ -85,6 +85,7 @@ With `make` and [uv](https://docs.astral.sh/uv/):
 make setup   # creates .venv (Python 3.12) and installs the package with its dev tools
 make demo    # runs the three cases on the correct graph, then on the defect graph
 make check   # runs gebra on every graph configuration and compares with the expected matrix
+make rdf     # runs the graph-as-RDF experiment and compares with the expected tables
 make test    # runs the tests and both notebooks, with outbound network access blocked
 ```
 
@@ -222,7 +223,8 @@ How to read it:
   on every path to it; it passes on every graph here, using contracts gebra inferred from the
   node bodies. With a plain `StateGraph(RefundState)` every state key counts as a graph input,
   so P-04 has nothing to report on these graphs. gebra's guide says the same of its own
-  examples. P-08 `determinism-replay` looks at nodes that declare a determinism claim; none
+  examples. The token graphs [below](#two-experiments-on-the-allow-rule) set an input schema,
+  and there P-04 does report. P-08 `determinism-replay` looks at nodes that declare a determinism claim; none
   does, so it has nothing to report.
 - **Warnings.** `contract-inferred` and `contract-defaulted` say that gebra filled a node's
   reads, writes or effects from its code or a default, because nothing declared them. They never
@@ -239,7 +241,8 @@ How to read it:
   graph shown below. It has no rule of its own for gate ordering. Its
   [guide](https://gebra-tech.github.io/gebra/guides/adopter-guide/#an-approval-gate-in-front-of-a-write)
   describes a workaround, a token the ALLOW branch writes and the write reads, and names two
-  gaps: a token written before the gate, and a proposal changed after ALLOW.
+  gaps: a token written before the gate, and a proposal changed after ALLOW. The
+  [two experiments](#two-experiments-on-the-allow-rule) below try it on this repository's graphs.
 
   In the `bypass` graph, refunds under 50 go from the agent straight to the write, and in
   `tests/test_graph.py` a refund approved by the AI agent is paid this way. The edge:
@@ -271,6 +274,68 @@ How to read it:
   `Command(goto=...)` target) adds no edge to what gebra analyzes, and a counter written inside a
   router function is not visible to it. This repository uses only declared edges and increments
   `repair_attempts` in the gate node.
+
+## Two experiments on the ALLOW rule
+
+**The token workaround.** [`allow_token.py`](src/ontology_gate/allow_token.py) applies the
+workaround from gebra's guide to the refund graphs. The state gets an `allow_token` key that the
+input schema leaves out, `StateGraph(TokenState, input_schema=RefundState)`, so no caller can
+supply it. A node `issue_token` on the ALLOW edge is the one declared writer of the key, and the
+write declares the key among its reads in its sidecar. The catch: on the bypass graph and on the
+graph that pays before the gate, P-04 fails with `read-key-never-written-on-path` at the write,
+because a route reaches the write on which nothing wrote the token. The gated graph passes. The
+two gaps: a graph that writes the token before the gate passes, because every route then carries
+a token, and so does a graph that changes the proposal after ALLOW, because the token records
+that the ALLOW branch ran, not what it allowed. This is P-04 answering its own question about a
+declared read, and nothing in it knows which node is the gate. At run time the write here also
+compares the token with the proposal it is about to pay and refuses on a mismatch; gebra does
+not see that comparison. The five graphs of the check matrix have no token, so their rows above
+stay as they are.
+
+**The graph as RDF.** [`graph_as_rdf.py`](src/ontology_gate/graph_as_rdf.py) is an experiment.
+gebra reads each graph (`gebra.extract`), and the script turns gebra's document into RDF in a
+namespace of this repository: each node a resource, each edge a `next` statement, a node tagged
+`billable` or `irreversible` a `Write`, each key a node writes a `writes` statement, and every
+edge except the gate's ALLOW edge also an `unchecked` statement. Which node is the gate, and
+which of its labels is ALLOW, are the two facts typed by hand. Two SHACL Core shapes, each a
+property path with no recursion, are validated with inference switched off: the rule, no `Write`
+reachable from START along `unchecked` edges, and the obvious shape, some ancestor of the
+`Write` is the `Gate`. The obvious shape does not work: in a loop the gate is an ancestor of
+every node, so it passes the bypass and the defect graphs. Three SPARQL ASK queries look for a
+write reachable without ALLOW, a token written by a node the ALLOW edge does not enter, and a
+node after ALLOW that writes the proposal on the way to a write. The script and the shapes are
+this repository's; gebra 0.2.0 has no rule of its own for gate ordering.
+
+What the experiment does not show. It covers eleven small graphs and one SHACL engine. The gate
+and its ALLOW label are typed by hand. The effect tags and the writes come from gebra's
+extraction, where they are declarations or gebra's inferences from a node's code, trusted and
+not tested. The `unchecked` statements already carry the knowledge of which edge is ALLOW. And
+it describes the graph as declared, so a route computed at run time is invisible to it.
+
+`make rdf` output, verbatim:
+
+```text
+the five graphs of the check matrix, each with its own sidecar
+graph         obvious shape         rule shape  write reachable without ALLOW  as expected
+------------------------------------------------------------------------------------------
+correct       pass                  pass        no                             yes
+bypass        pass, which is wrong  violation   yes                            yes
+defect        pass, which is wrong  violation   yes                            yes
+uncapped      pass                  pass        no                             yes
+no-escalate   pass                  pass        no                             yes
+
+the token graphs, each with a sidecar that declares the token
+graph                           write reachable without ALLOW  token written off the ALLOW edge  proposal changed after ALLOW  as expected
+------------------------------------------------------------------------------------------------------------------------------------------
+correct, with token             no                             no                                no                            yes
+bypass, with token              yes                            no                                no                            yes
+defect, with token              yes                            no                                no                            yes
+token written before the gate   no                             yes                               no                            yes
+token written before a bypass   yes                            yes                               no                            yes
+proposal changed after ALLOW    no                             no                                yes                           yes
+
+every row is as expected
+```
 
 ## Notebooks
 
@@ -315,6 +380,8 @@ src/ontology_gate/
   model.py      RepairingModel (default), ScriptedModel, and LiveModel (optional)
   graph.py      build_graph(variant) for correct, defect, no-escalate, bypass, uncapped
   checks.py     run_gebra(graph, sidecar_path) and the make check matrix
+  allow_token.py  the token workaround from gebra's guide, on the refund graphs
+  graph_as_rdf.py the experiment: gebra's extraction as RDF, two shapes, three ASKs (make rdf)
   demo.py       python -m ontology_gate.demo [--defect] [--live]
 gebra.toml      declarations for the correct graph
 sidecars/       declarations for the other configurations

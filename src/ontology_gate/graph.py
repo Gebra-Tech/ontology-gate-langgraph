@@ -88,12 +88,12 @@ def gate_node(state: RefundState) -> dict[str, Any]:
 
 def commit_refund(state: RefundState) -> dict[str, Any]:
     """The write: pay the refund. Here it only appends to the in-memory ledger."""
-    return {"ledger": [_ledger_entry(state)]}
+    return {"ledger": [ledger_entry(state)]}
 
 
 def execute_refund(state: RefundState) -> dict[str, Any]:
     """The same write, placed before the gate in the defect graph."""
-    return {"ledger": [_ledger_entry(state)]}
+    return {"ledger": [ledger_entry(state)]}
 
 
 def human_review(state: RefundState) -> dict[str, Any]:
@@ -208,7 +208,7 @@ def run_case(graph, case: str, recursion_limit: int = 25) -> CaseRun:
     return run
 
 
-def _ledger_entry(state: RefundState) -> dict[str, str]:
+def ledger_entry(state: RefundState) -> dict[str, str]:
     return {
         "case": state["case"],
         "order_id": state["order_id"],

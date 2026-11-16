@@ -1,6 +1,6 @@
 PY ?= .venv/bin/python
 
-.PHONY: setup demo check test lint notebooks
+.PHONY: setup demo check rdf test lint notebooks
 
 setup:
 	@if command -v uv >/dev/null 2>&1; then \
@@ -14,6 +14,9 @@ demo:
 
 check:
 	$(PY) -m ontology_gate.checks
+
+rdf:
+	$(PY) -m ontology_gate.graph_as_rdf
 
 test:
 	$(PY) -m pytest

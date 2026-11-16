@@ -41,3 +41,6 @@ jobs:
 
       - name: Demo
         run: make demo
+
+      - name: Graph as RDF experiment
+        run: make rdf
