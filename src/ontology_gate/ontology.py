@@ -65,12 +65,12 @@ shop:RefundShape a sh:NodeShape ;
     sh:property [
         sh:path shop:forOrder ;
         sh:minCount 1 ;
-        sh:message "A refund must reference an order." ;
+        sh:message "Name the order this refund is for." ;
     ] ;
     sh:property [
         sh:path shop:approvedBy ;
         sh:class shop:Manager ;
-        sh:message "The approver must be a Manager." ;
+        sh:message "Only a Manager may approve a refund." ;
     ] ;
     sh:property [
         sh:path shop:approvedBy ;
@@ -90,8 +90,8 @@ shop:OrderShape a sh:NodeShape ;
 # The five policy messages, in the order the shapes declare them.
 RULE_MESSAGES = (
     "A refund needs an amount of at most 1000.",
-    "A refund must reference an order.",
-    "The approver must be a Manager.",
+    "Name the order this refund is for.",
+    "Only a Manager may approve a refund.",
     "The approver must not be the person who requested the refund.",
     "An order can be refunded only once.",
 )

@@ -16,21 +16,28 @@ ends with two next steps it leaves open:
 1. make the gate a check the agent has to pass before any write action;
 2. feed the SHACL violation messages back to the agent, so it can repair its plan.
 
-This repository builds both, as a LangGraph agent. Four moments in the talk shape it (times are
-approximate, wording paraphrased):
+This repository builds both, as a LangGraph agent, with one difference: his first step names a
+tool or MCP server the agent must call, and here the gate is a node of the graph instead. Four
+moments in the talk shape it (times are approximate, from the talk page's transcript; wording
+paraphrased):
 
-- **about 13:13**: agent loops can keep going, drift, and run up token costs, so iteration needs
-  control;
-- **about 16:15**: the check belongs after a tool returns and before its result is accepted,
-  and consequential side effects wait until validation passes;
-- **about 17:43**: type checking (Pydantic) and business-rule checking (the ontology) answer
-  different questions;
-- **about 18:59**: a second refund on the same order is one of his examples of a failure an
+- **about 13:38 to 13:50**: agent loops can run forever, drift, and run up token costs, and his
+  advice is to be careful with them;
+- **about 16:45**: after the tool runs is where an ontology validator can check the result, and a
+  result that does not hold goes back to the model or to a person (17:32);
+- **about 18:23**: check types with Pydantic and results with the ontology, and keep the agent
+  free of side effects until the ontology check has passed (18:23 to 18:41);
+- **about 19:12**: a second refund on the same order is one of his examples of a failure an
   ontology can catch.
 
-This is an independent follow-up. It is not affiliated with or endorsed by Frank Coyle, and it
-copies nothing from compass_ai: only the scenario idea, a support agent that proposes refunds, is
-shared. The people, orders, triples, shapes and code here are new.
+This is an independent follow-up. It is not affiliated with or endorsed by Frank Coyle. It
+follows compass_ai, with credit, in four things: the scenario (a support agent that proposes
+refunds), the shop schema's class hierarchy and property names, the four refund rules in
+`RefundShape`, and the notebook format. New here: the SHACL form of the once-per-order rule (the
+rule itself is from his talk, where a slide states it as an OWL functional property), the people,
+orders and facts, the gate's handling of violations already in the knowledge base, the LangGraph
+graphs, the gebra checks and all the code. compass_ai has no license file, so ask its author
+before reusing the parts that follow it.
 
 ## The graph
 
@@ -99,7 +106,7 @@ Manager as approver, an approver who is not the requester, and at most one refun
 
 | case | first proposal | gate says | repair |
 |---|---|---|---|
-| agent-approves | shopbot approves lena's 80 on o1002 | BLOCK: the approver must be a Manager | priya approves: ALLOW |
+| agent-approves | shopbot approves lena's 80 on o1002 | BLOCK: only a Manager may approve a refund | priya approves: ALLOW |
 | self-approval | priya approves her own 40 on o1003 | BLOCK: the approver must not be the requester | marco approves: ALLOW |
 | duplicate-refund | priya approves lena's 60 on o1001 | BLOCK: an order can be refunded only once | no approver can fix it: BLOCK three times, then human review |
 
@@ -114,8 +121,10 @@ summary
 
 On the correct graph the duplicate is blocked three times and nothing is paid. On the defect
 graph the gate blocks it the same three times, but each proposal was already paid when the gate
-saw it. The agent-approves refund is paid twice there too: once for the proposal the gate
-blocked, once for the repair.
+saw it. The agent-approves and self-approval refunds are each paid twice there too: once for the
+proposal the gate blocked, once for the repair. The gate allows the second payment because it
+reads a fixed knowledge base and never sees the ledger, so the first payment is not a fact it
+knows about.
 
 ## What gebra checks here
 
@@ -168,7 +177,7 @@ findings
   uncapped, gebra.toml: none
     limit: the declared bound is trusted, but the router no longer enforces it
   bypass, gebra.toml: none
-    pass (gate ordering not checked in 0.1.1; planned)
+    limit: gebra 0.2.0 has no gate-ordering rule of its own
 
 extraction warnings on the correct graph with gebra.toml: contract-defaulted x3, contract-inferred x4
   (gebra inferred or defaulted these contract slots; warnings never change a result)
@@ -193,7 +202,9 @@ How to read it:
   as best effort.
 - **P-04 and P-08.** P-04 `dataflow-completeness` asks whether every key a node reads was written
   on every path to it; it passes on every graph here, using contracts gebra inferred from the
-  node bodies. P-08 `determinism-replay` looks at nodes that declare a determinism claim; none
+  node bodies. With a plain `StateGraph(RefundState)` every state key counts as a graph input,
+  so P-04 has nothing to report on these graphs. gebra's guide says the same of its own
+  examples. P-08 `determinism-replay` looks at nodes that declare a determinism claim; none
   does, so it has nothing to report.
 - **Warnings.** `contract-inferred` and `contract-defaulted` say that gebra filled a node's
   reads, writes or effects from its code or a default, because nothing declared them. They never
@@ -206,8 +217,11 @@ How to read it:
 
 - **The ontology and the business rules.** Whether the shapes are right, whether a refund makes
   sense, whether the knowledge base is true: that is the gate's job, at run time.
-- **That every write passes through the gate's ALLOW branch.** gebra 0.1.1 misses the bypass
-  edge shown below; a planned check on gebra's roadmap is meant to cover this rule.
+- **That every write passes through the gate's ALLOW branch.** gebra 0.2.0 passes the bypass
+  graph shown below. It has no rule of its own for gate ordering. Its
+  [guide](https://gebra-tech.github.io/gebra/guides/adopter-guide/#an-approval-gate-in-front-of-a-write)
+  describes a workaround, a token the ALLOW branch writes and the write reads, and names two
+  gaps: a token written before the gate, and a proposal changed after ALLOW.
 
   In the `bypass` graph, refunds under 50 go from the agent straight to the write, and in
   `tests/test_graph.py` a refund approved by the AI agent is paid this way. The edge:
@@ -223,7 +237,7 @@ How to read it:
   ```text
   bypass, gebra.toml                pass  pass  pass  pass  pass  yes
     bypass, gebra.toml: none
-      pass (gate ordering not checked in 0.1.1; planned)
+      limit: gebra 0.2.0 has no gate-ordering rule of its own
   ```
 - **That a declared bound is enforced.** The `uncapped` graph keeps the loop variant but its
   router ignores `MAX_REPAIRS`. gebra passes it, and the duplicate-refund case runs until

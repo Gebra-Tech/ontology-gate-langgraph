@@ -19,7 +19,7 @@ classifiers = [
     "Intended Audience :: Education",
 ]
 dependencies = [
-    "gebra==0.1.1",
+    "gebra==0.2.0",
     "langgraph>=1,<2",
     "langchain-core>=1,<2",
     "rdflib",

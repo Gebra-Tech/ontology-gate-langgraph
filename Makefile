@@ -4,7 +4,7 @@ PY ?= .venv/bin/python
 
 setup:
 	@if command -v uv >/dev/null 2>&1; then \
-		uv venv --python 3.12 .venv && uv pip install --python $(PY) -e ".[dev]"; \
+		uv venv --allow-existing --python 3.12 .venv && uv pip install --python $(PY) -e ".[dev]"; \
 	else \
 		python3 -m venv .venv && $(PY) -m pip install -e ".[dev]"; \
 	fi

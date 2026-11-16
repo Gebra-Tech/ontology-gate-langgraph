@@ -10,13 +10,13 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_gebra_version_is_the_one_the_limits_describe():
-    # The bypass row, notebook Part D and the README limits describe gebra 0.1.1.
-    if version("gebra") != "0.1.1":
+    # The bypass row, notebook Part D and the README limits describe gebra 0.2.0.
+    if version("gebra") != "0.2.0":
         pytest.fail("gebra upgraded: review the bypass row, notebook Part D and the README limits")
 
 
 def test_bypass_passes_on_this_gebra():
-    # gebra 0.1.1 does not check that every write passes through the gate's ALLOW branch.
+    # gebra 0.2.0 has no rule of its own that every write passes through the gate's ALLOW branch.
     outcome = run_gebra(build_graph("bypass"), ROOT / "gebra.toml")
     for pid in ("P-01", "P-02", "P-04", "P-06", "P-08"):
         assert outcome[pid] == ("pass", None), pid

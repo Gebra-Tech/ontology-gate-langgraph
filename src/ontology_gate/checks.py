@@ -1,7 +1,7 @@
 """gebra's structural checks on the refund graphs, before anything runs.
 
 ``run_gebra`` extracts one graph with one sidecar and returns the result of the five
-properties gebra 0.1.1 implements. ``python -m ontology_gate.checks`` (``make check``)
+properties gebra 0.2.0 implements. ``python -m ontology_gate.checks`` (``make check``)
 prints the matrix of every configuration and exits non-zero if a row differs from what this
 repository expects.
 
@@ -151,7 +151,7 @@ CONFIGURATIONS = (
         "bypass",
         "gebra.toml",
         _expect(),
-        "pass (gate ordering not checked in 0.1.1; planned)",
+        "limit: gebra 0.2.0 has no gate-ordering rule of its own",
     ),
 )
 
