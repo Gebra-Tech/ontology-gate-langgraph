@@ -31,7 +31,7 @@ def test_each_configuration_matches_the_expected_row(config):
 
 def test_findings_name_the_expected_nodes():
     loop = run_gebra(build_graph("correct"), ROOT / "sidecars/none.toml")
-    assert loop["locations"]["P-02"] == ["agent", "gate"]
+    assert loop["locations"]["P-02"] == ["agent", "door", "gate"]
     effect = run_gebra(build_graph("defect"), ROOT / "sidecars/defect.toml")
     assert effect["locations"]["P-06"] == ["execute_refund"]
     unreachable = run_gebra(build_graph("no-escalate"), ROOT / "gebra.toml")

@@ -2,12 +2,16 @@
 
 The correct graph::
 
-    START -> agent -> gate --allow--> commit_refund -> END
-                ^       |--repair--> agent
-                        `--escalate--> human_review -> END
+    START -> agent -> door -> gate --allow--> commit_refund -> END
+               ^                |--repair--> agent
+                                `--escalate--> human_review -> END
 
-The gate returns its violations to the agent, which repairs its proposal. The refund is
-written only after ALLOW, and the loop ends at human review after MAX_REPAIRS blocks.
+The door checks the proposal's fields and types with Pydantic and binds it to the request. It
+never routes: it writes its messages to ``door_errors``, and the gate answers BLOCK with them.
+Otherwise the gate validates the proposal against the ontology. The gate returns its violations
+to the agent, which repairs its proposal. The refund is written only after ALLOW, and the loop
+ends at human review after MAX_REPAIRS blocks. The graph has one loop, and it passes through
+the gate.
 
 All variants share the same node functions and use only declared edges: no Send, no
 Command destinations and no subgraphs, so gebra can read every route.
@@ -20,8 +24,9 @@ from typing import Annotated, Any, TypedDict
 from langgraph.graph import END, START, StateGraph
 
 from ontology_gate.cases import get_case
-from ontology_gate.gate import describe, gate
-from ontology_gate.model import Model, ScriptedModel
+from ontology_gate.door import door_errors
+from ontology_gate.gate import GateResult, describe, gate
+from ontology_gate.model import Model, RepairingModel
 
 MAX_REPAIRS = 3
 BYPASS_THRESHOLD = 50
@@ -32,6 +37,7 @@ class RefundState(TypedDict):
     case: str
     order_id: str
     proposal: str
+    door_errors: list[str]
     violations: list[str]
     repair_attempts: int
     decision: str
@@ -44,6 +50,7 @@ def initial_state(case: str) -> RefundState:
         "case": case,
         "order_id": "",
         "proposal": "",
+        "door_errors": [],
         "violations": [],
         "repair_attempts": 0,
         "decision": "",
@@ -64,9 +71,15 @@ def make_agent(model: Model):
     return agent
 
 
+def door_node(state: RefundState) -> dict[str, Any]:
+    """Pydantic at the door: types, and a match with the request. It never routes."""
+    return {"door_errors": door_errors(state["proposal"], get_case(state["case"]))}
+
+
 def gate_node(state: RefundState) -> dict[str, Any]:
     """The gate node. The repair counter is incremented here, not in the router."""
-    result = gate(state["proposal"])
+    errors = state["door_errors"]
+    result = GateResult(decision="BLOCK", violations=errors) if errors else gate(state["proposal"])
     update: dict[str, Any] = {"decision": result.decision, "violations": result.violations}
     if result.decision == "BLOCK":
         update["repair_attempts"] = state["repair_attempts"] + 1
@@ -102,7 +115,7 @@ def route_without_cap(state: RefundState) -> str:
 
 
 def route_after_agent(state: RefundState) -> str:
-    """The bypass shortcut: small refunds skip the gate."""
+    """The bypass shortcut: small refunds skip the door and the gate."""
     amount = describe(state["proposal"]).amount
     return "shortcut" if amount is not None and amount < BYPASS_THRESHOLD else "check"
 
@@ -115,7 +128,8 @@ def build_workflow(variant: str = "correct", model: Model | None = None) -> Stat
     if variant not in VARIANTS:
         raise ValueError(f"unknown variant {variant!r}; choose from {', '.join(VARIANTS)}")
     workflow = StateGraph(RefundState)
-    workflow.add_node("agent", make_agent(model or ScriptedModel()))
+    workflow.add_node("agent", make_agent(model or RepairingModel()))
+    workflow.add_node("door", door_node)
     workflow.add_node("gate", gate_node)
     workflow.add_node("human_review", human_review)
     workflow.add_edge(START, "agent")
@@ -124,7 +138,8 @@ def build_workflow(variant: str = "correct", model: Model | None = None) -> Stat
     if variant == "defect":
         # Validate after the tool ran: the refund is paid before the gate sees it.
         workflow.add_node("execute_refund", execute_refund)
-        workflow.add_edge("agent", "execute_refund")
+        workflow.add_edge("agent", "door")
+        workflow.add_edge("door", "execute_refund")
         workflow.add_edge("execute_refund", "gate")
         workflow.add_conditional_edges(
             "gate",
@@ -137,10 +152,11 @@ def build_workflow(variant: str = "correct", model: Model | None = None) -> Stat
     workflow.add_edge("commit_refund", END)
     if variant == "bypass":
         workflow.add_conditional_edges(
-            "agent", route_after_agent, {"shortcut": "commit_refund", "check": "gate"}
+            "agent", route_after_agent, {"shortcut": "commit_refund", "check": "door"}
         )
     else:
-        workflow.add_edge("agent", "gate")
+        workflow.add_edge("agent", "door")
+    workflow.add_edge("door", "gate")
 
     if variant == "no-escalate":
         # human_review stays in the graph, but nothing routes to it.

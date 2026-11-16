@@ -1,16 +1,33 @@
 """The models that propose refunds.
 
-``ScriptedModel`` is the default: it replays a fixed plan per case, so the demo, the tests and
-the notebooks run offline and print the same thing every time. ``LiveModel`` asks a hosted
-model instead; it needs the ``live`` extra and ANTHROPIC_API_KEY, and its results vary.
+``RepairingModel`` is the default. It runs offline and reads the gate's messages: its first
+proposal comes from the case, and each later one is computed from the last messages and the
+knowledge base, so the demo, the tests and the notebooks print the same thing every time.
+``ScriptedModel`` replays a fixed plan per case and ignores the messages. ``LiveModel`` asks a
+hosted model instead; it needs the ``live`` extra and ANTHROPIC_API_KEY, and its results vary.
 """
 
 import os
 import re
 from typing import Protocol
 
+from rdflib import RDF, Namespace
+
 from ontology_gate.cases import Case
-from ontology_gate.ontology import KB_TTL, SCHEMA_TTL
+from ontology_gate.door import parse_turtle
+from ontology_gate.ontology import KB_TTL, NS, SCHEMA_TTL
+
+SHOP = Namespace(NS)
+
+# The messages that say the approver is the problem.
+APPROVER_MESSAGES = frozenset(
+    {
+        "The approver does not exist.",
+        "A refund needs an approver.",
+        "Only a Manager may approve a refund.",
+        "The approver must not be the person who requested the refund.",
+    }
+)
 
 DEFAULT_LIVE_MODEL = "claude-haiku-5-5"
 
@@ -50,6 +67,32 @@ class ScriptedModel:
     def propose(self, case: Case, violations: list[str], attempt: int) -> str:
         approvers = self.APPROVERS[case.name]
         approver = approvers[min(attempt, len(approvers) - 1)]
+        return refund_turtle(refund_id_for(case, attempt), case, approver)
+
+
+class RepairingModel:
+    """Proposes from the case, then repairs from the gate's messages and the knowledge base.
+
+    After a BLOCK whose messages reject the approver, it names a Manager from the knowledge
+    base other than the requester, the first by name. After any other BLOCK, such as an order
+    that was already refunded, it changes nothing, because no field it controls can fix that.
+    Each proposal gets a new refund id. It remembers its last approver per case, and starts
+    again from the case on the first attempt.
+    """
+
+    def __init__(self, kb_ttl: str = KB_TTL) -> None:
+        kb = parse_turtle(kb_ttl)
+        self.managers = sorted(str(m).removeprefix(NS) for m in kb.subjects(RDF.type, SHOP.Manager))
+        self._approvers: dict[str, str] = {}
+
+    def propose(self, case: Case, violations: list[str], attempt: int) -> str:
+        approver = self._approvers.get(case.name, case.approver)
+        if attempt == 0:
+            approver = case.approver
+        elif APPROVER_MESSAGES & set(violations):
+            others = [manager for manager in self.managers if manager != case.customer]
+            approver = others[0] if others else approver
+        self._approvers[case.name] = approver
         return refund_turtle(refund_id_for(case, attempt), case, approver)
 
 

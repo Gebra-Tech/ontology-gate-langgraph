@@ -41,13 +41,16 @@ before reusing the parts that follow it.
 
 ## The graph
 
-The correct graph. The gate is a node; a BLOCK goes back to the agent with the policy messages,
+The correct graph. The door checks the proposal's fields and types with Pydantic, and that it
+answers the request; it never routes, and the gate answers BLOCK with its messages. Otherwise the
+gate checks the proposal against the ontology. A BLOCK goes back to the agent with the messages,
 and the refund is written only after ALLOW. After three BLOCKs the case goes to a person.
 
 ```mermaid
 flowchart LR
     start_node([START]) --> agent
-    agent --> gate
+    agent --> door
+    door --> gate
     gate -- allow --> commit_refund
     gate -- repair --> agent
     gate -- escalate --> human_review
@@ -63,7 +66,8 @@ the tool ran.
 ```mermaid
 flowchart LR
     start_node([START]) --> agent
-    agent --> execute_refund
+    agent --> door
+    door --> execute_refund
     execute_refund --> gate
     gate -- allow --> end_node([END])
     gate -- repair --> agent
@@ -94,8 +98,11 @@ python3.12 -m venv .venv
 .venv/bin/python -m pytest
 ```
 
-Everything runs offline. The agent is a scripted model that replays the same proposals every
-run, so the output below is what you will see.
+Everything runs offline. The agent is an offline model that reads the gate's messages: its first
+proposal comes from the case, and after a BLOCK that rejects the approver it names a Manager
+from the knowledge base who is not the requester. After any other BLOCK it proposes the same
+refund again under a new id. It decides the same way every run, so the output below is what you
+will see.
 
 ## What the demo shows
 
@@ -116,7 +123,7 @@ that finds a problem decides.
 
 | case | first proposal | gate says | repair |
 |---|---|---|---|
-| agent-approves | shopbot approves lena's 80 on o1002 | BLOCK: only a Manager may approve a refund | priya approves: ALLOW |
+| agent-approves | shopbot approves lena's 80 on o1002 | BLOCK: only a Manager may approve a refund | marco approves: ALLOW |
 | self-approval | priya approves her own 40 on o1003 | BLOCK: the approver must not be the requester | marco approves: ALLOW |
 | duplicate-refund | priya approves lena's 60 on o1001 | BLOCK: an order can be refunded only once | no approver can fix it: BLOCK three times, then human review |
 
@@ -172,7 +179,7 @@ uncapped, gebra.toml              pass  pass  pass  pass  pass  yes
 bypass, gebra.toml                pass  pass  pass  pass  pass  yes
 
 findings
-  correct, no sidecar: P-02 cycle-without-termination-witness (agent, gate)
+  correct, no sidecar: P-02 cycle-without-termination-witness (agent, door, gate)
     the repair loop declares no bound; no effect is declared, so P-06 has nothing to check
   correct, gebra.toml: none
     bound declared on gate; commit_refund is outside the loop
@@ -180,7 +187,7 @@ findings
     execute_refund is billable and irreversible inside the loop, with no protection
   defect, defect-idempotent.toml: none
     the declared idempotency key on order_id is accepted; it is trusted, not checked
-  correct, negative-control.toml: P-02 cycle-without-termination-witness (agent, gate)
+  correct, negative-control.toml: P-02 cycle-without-termination-witness (agent, door, gate)
     the variant names a key that is not in the state, so it is not a bound
   no-escalate, gebra.toml: P-01 node-unreachable-from-start (human_review)
     nothing routes to human_review
@@ -189,7 +196,7 @@ findings
   bypass, gebra.toml: none
     limit: gebra 0.2.0 has no gate-ordering rule of its own
 
-extraction warnings on the correct graph with gebra.toml: contract-defaulted x3, contract-inferred x4
+extraction warnings on the correct graph with gebra.toml: contract-defaulted x4, contract-inferred x5
   (gebra inferred or defaulted these contract slots; warnings never change a result)
 
 every row matches the expected matrix
@@ -197,7 +204,8 @@ every row matches the expected matrix
 
 How to read it:
 
-- **The repair loop.** Without declarations, P-02 reports the `{agent, gate}` cycle. With the
+- **The repair loop.** Without declarations, P-02 reports the `{agent, door, gate}` cycle. The
+  door never routes, so it adds a node to the loop but no second loop. With the
   loop variant in `gebra.toml` it passes. The negative control names a key that is not in
   `RefundState`, and P-02 does not count it as a bound.
 - **The write.** In the defect graph P-06 reports `execute_refund`: it is billable and
@@ -238,7 +246,7 @@ How to read it:
 
   ```python
   workflow.add_conditional_edges(
-      "agent", route_after_agent, {"shortcut": "commit_refund", "check": "gate"}
+      "agent", route_after_agent, {"shortcut": "commit_refund", "check": "door"}
   )
   ```
 
@@ -249,10 +257,11 @@ How to read it:
     bypass, gebra.toml: none
       limit: gebra 0.2.0 has no gate-ordering rule of its own
   ```
-- **That the refund matches the request.** The gate does not see the case either. It checks the
-  proposal against the facts and the policy, so it would ALLOW a refund for more than the
-  customer asked for, or one on another customer's order where the requester is that order's
-  customer.
+- **That the refund matches the request.** `gate()` does not check it either, because it never
+  sees the case: on its own it would ALLOW a refund for more than the customer asked for, or one
+  on another customer's order where the requester is that order's customer. In the graph the
+  `door` node checks it before the gate: the same order, the same requester, and no more than
+  the customer asked for.
 - **That a declared bound is enforced.** The `uncapped` graph keeps the loop variant but its
   router ignores `MAX_REPAIRS`. gebra passes it, and the duplicate-refund case runs until
   LangGraph's recursion limit stops it.
@@ -283,7 +292,7 @@ and a test checks that the committed copy matches a fresh build.
 ## Optional live mode
 
 `python -m ontology_gate.demo --live` asks a hosted model for each proposal instead of the
-script: it uses Claude Haiku 5.5 (`claude-haiku-5-5`) through `langchain-anthropic`, and a
+offline model: it uses Claude Haiku 5.5 (`claude-haiku-5-5`) through `langchain-anthropic`, and a
 different model can be named in `ONTOLOGY_GATE_MODEL`. It needs the extra and a key:
 
 ```bash
@@ -299,10 +308,11 @@ Results vary between runs. The tests never use live mode.
 ```text
 src/ontology_gate/
   ontology.py   schema, knowledge base and SHACL shapes, as Turtle strings
-  door.py       shape_errors(proposal_ttl): one refund with its four fields, nothing else
+  door.py       shape_errors, RefundProposal and door_errors: the proposal's shape, its types,
+                and its match with the request
   gate.py       gate(proposal_ttl, kb_ttl) -> GateResult(decision, violations)
   cases.py      the refund requests
-  model.py      ScriptedModel (default) and LiveModel (optional)
+  model.py      RepairingModel (default), ScriptedModel, and LiveModel (optional)
   graph.py      build_graph(variant) for correct, defect, no-escalate, bypass, uncapped
   checks.py     run_gebra(graph, sidecar_path) and the make check matrix
   demo.py       python -m ontology_gate.demo [--defect] [--live]

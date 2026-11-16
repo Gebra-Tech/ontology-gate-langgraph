@@ -4,7 +4,8 @@
     python -m ontology_gate.demo --defect   the correct graph, then the defect graph
     python -m ontology_gate.demo --live     proposals from a hosted model instead of the script
 
-Offline by default: the scripted model replays the same proposals every run.
+Offline by default: the repairing model computes each proposal from the case and the gate's
+messages, so every run prints the same thing.
 """
 
 import argparse
@@ -14,7 +15,7 @@ from collections import Counter
 
 from ontology_gate.cases import DEMO_CASES, get_case
 from ontology_gate.graph import CaseRun, build_graph, run_case
-from ontology_gate.model import Model, ScriptedModel
+from ontology_gate.model import Model, RepairingModel
 
 TITLES = {
     "correct": "correct graph: the refund is written only after the gate says ALLOW",
@@ -88,7 +89,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--live", action="store_true", help="use a hosted model (needs a key)")
     args = parser.parse_args(argv)
 
-    model: Model = live_model() if args.live else ScriptedModel()
+    model: Model = live_model() if args.live else RepairingModel()
     if args.live:
         print(f"Live mode: proposals come from {model.model_name}. Results vary between runs.\n")
     print("Cases:")
