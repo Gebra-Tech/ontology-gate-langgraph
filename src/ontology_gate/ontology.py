@@ -63,9 +63,24 @@ shop:RefundShape a sh:NodeShape ;
         sh:message "A refund needs an amount of at most 1000." ;
     ] ;
     sh:property [
+        sh:path shop:amount ;
+        sh:minExclusive 0 ;
+        sh:message "The amount must be above 0." ;
+    ] ;
+    sh:property [
         sh:path shop:forOrder ;
         sh:minCount 1 ;
         sh:message "Name the order this refund is for." ;
+    ] ;
+    sh:property [
+        sh:path shop:requestedBy ;
+        sh:minCount 1 ;
+        sh:message "A refund needs a requester." ;
+    ] ;
+    sh:property [
+        sh:path shop:approvedBy ;
+        sh:minCount 1 ;
+        sh:message "A refund needs an approver." ;
     ] ;
     sh:property [
         sh:path shop:approvedBy ;
@@ -76,6 +91,16 @@ shop:RefundShape a sh:NodeShape ;
         sh:path shop:approvedBy ;
         sh:disjoint shop:requestedBy ;
         sh:message "The approver must not be the person who requested the refund." ;
+    ] ;
+    sh:sparql [
+        sh:message "The requester must be the customer who placed the order." ;
+        sh:select '''
+            SELECT $this WHERE {
+                $this <http://example.org/shop#forOrder> ?order ;
+                      <http://example.org/shop#requestedBy> ?requester .
+                FILTER NOT EXISTS { ?requester <http://example.org/shop#placed> ?order }
+            }
+        ''' ;
     ] .
 
 shop:OrderShape a sh:NodeShape ;
@@ -87,11 +112,34 @@ shop:OrderShape a sh:NodeShape ;
     ] .
 """
 
-# The five policy messages, in the order the shapes declare them.
-RULE_MESSAGES = (
+# Checked before the closure, on the proposal (door.py) and against the knowledge base (gate.py).
+NOT_ONE_REFUND = "The proposal must describe exactly one refund."
+NOTHING_ELSE = "The proposal may describe one refund and nothing else."
+ID_IN_USE = "The refund id is already in use."
+NO_SUCH_ORDER = "The order does not exist."
+NO_SUCH_REQUESTER = "The requester does not exist."
+NO_SUCH_APPROVER = "The approver does not exist."
+
+# The SHACL messages, in the order the shapes declare them.
+SHAPE_MESSAGES = (
     "A refund needs an amount of at most 1000.",
+    "The amount must be above 0.",
     "Name the order this refund is for.",
+    "A refund needs a requester.",
+    "A refund needs an approver.",
     "Only a Manager may approve a refund.",
     "The approver must not be the person who requested the refund.",
+    "The requester must be the customer who placed the order.",
     "An order can be refunded only once.",
+)
+
+# Every policy message the gate can give, in the order the gate checks the rules.
+RULE_MESSAGES = (
+    NOT_ONE_REFUND,
+    NOTHING_ELSE,
+    ID_IN_USE,
+    NO_SUCH_ORDER,
+    NO_SUCH_REQUESTER,
+    NO_SUCH_APPROVER,
+    *SHAPE_MESSAGES,
 )

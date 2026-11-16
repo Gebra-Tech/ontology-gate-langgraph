@@ -1,9 +1,16 @@
 """The ontology gate: ALLOW or BLOCK one proposed refund against the knowledge base.
 
-``gate()`` merges the schema, the knowledge base and the proposal, applies the OWL-RL closure
-(which includes the RDFS rules), and validates the result against the SHACL policy. It reports
-only the violations the proposal introduces: the knowledge base is validated on its own as
-well, and anything already wrong there is not the proposal's fault.
+``gate()`` works in three steps, and the first step that finds a problem decides:
+
+1. the door (``door.shape_errors``): the proposal is one refund with its four fields and
+   nothing else;
+2. the knowledge base, before any closure: the refund id is new, and the order, the requester
+   and the approver are already there. This has to come first, because the OWL-RL closure types
+   any object of ``forOrder`` as an Order and any approver as an Employee;
+3. the policy: merge the schema, the knowledge base and the proposal, apply the OWL-RL closure
+   (which includes the RDFS rules), and validate the result against the SHACL shapes. Only the
+   violations the proposal introduces count: the knowledge base is validated on its own as well,
+   and anything already wrong there is not the proposal's fault.
 """
 
 from functools import lru_cache
@@ -16,7 +23,18 @@ from rdflib import RDF, Graph, Namespace, URIRef
 from rdflib import Literal as RDFLiteral
 from rdflib.namespace import SH
 
-from ontology_gate.ontology import KB_TTL, NS, PREFIXES, RULE_MESSAGES, SCHEMA_TTL, SHAPES_TTL
+from ontology_gate.door import parse_turtle, shape_errors
+from ontology_gate.ontology import (
+    ID_IN_USE,
+    KB_TTL,
+    NO_SUCH_APPROVER,
+    NO_SUCH_ORDER,
+    NO_SUCH_REQUESTER,
+    NS,
+    RULE_MESSAGES,
+    SCHEMA_TTL,
+    SHAPES_TTL,
+)
 
 SHOP = Namespace(NS)
 
@@ -42,27 +60,19 @@ class ProposalSummary(BaseModel):
 
 def gate(proposal_ttl: str, kb_ttl: str = KB_TTL) -> GateResult:
     """Decide whether one proposed refund may be written. Never raises on bad input."""
-    try:
-        proposal = _parse(proposal_ttl)
-    except Exception as error:  # rdflib raises several unrelated types on bad Turtle
-        lines = str(error).strip().splitlines()
-        detail = lines[0] if lines else type(error).__name__
-        return GateResult(
-            decision="BLOCK", violations=[f"The proposal is not valid Turtle: {detail}"]
-        )
+    errors = shape_errors(proposal_ttl)
+    if errors:
+        return GateResult(decision="BLOCK", violations=errors)
+    proposal = parse_turtle(proposal_ttl)
 
-    refunds = set(proposal.subjects(RDF.type, SHOP.Refund))
-    if len(refunds) != 1:
-        return GateResult(
-            decision="BLOCK",
-            violations=["The proposal must describe exactly one refund."],
-        )
+    errors = _kb_errors(proposal, kb_ttl)
+    if errors:
+        return GateResult(decision="BLOCK", violations=errors)
 
-    before = _kb_results(kb_ttl)
-    data = _parse(kb_ttl)
+    data = Graph()
+    data += _kb(kb_ttl)
     data += proposal
-    after = _results(data)
-    new = after - before
+    new = _results(_close(data)) - _kb_results(kb_ttl)
     if not new:
         return GateResult(decision="ALLOW")
     return GateResult(decision="BLOCK", violations=_ordered_messages(new))
@@ -71,7 +81,7 @@ def gate(proposal_ttl: str, kb_ttl: str = KB_TTL) -> GateResult:
 def describe(proposal_ttl: str) -> ProposalSummary:
     """Read the refund fields out of a proposal, for logging and the ledger."""
     try:
-        graph = _parse(proposal_ttl)
+        graph = parse_turtle(proposal_ttl)
     except Exception:
         return ProposalSummary()
     refund = next(iter(graph.subjects(RDF.type, SHOP.Refund)), None)
@@ -87,35 +97,63 @@ def describe(proposal_ttl: str) -> ProposalSummary:
     )
 
 
-def _parse(ttl: str) -> Graph:
-    graph = Graph()
-    graph.parse(data=PREFIXES + ttl, format="turtle")
-    return graph
+def _kb_errors(proposal: Graph, kb_ttl: str) -> list[str]:
+    """The checks that must run on the knowledge base as it is, before any closure."""
+    refund = next(iter(proposal.subjects(RDF.type, SHOP.Refund)))
+    kb = _kb(kb_ttl)
+    if (refund, None, None) in kb or (None, refund, None) in kb or (None, None, refund) in kb:
+        return [ID_IN_USE]
+    known = _kb_closed(kb_ttl)
+    needed = (
+        (SHOP.forOrder, SHOP.Order, NO_SUCH_ORDER),
+        (SHOP.requestedBy, SHOP.Person, NO_SUCH_REQUESTER),
+        (SHOP.approvedBy, SHOP.Person, NO_SUCH_APPROVER),
+    )
+    return [
+        message
+        for field, kind, message in needed
+        if (proposal.value(refund, field), RDF.type, kind) not in known
+    ]
 
 
 @lru_cache(maxsize=1)
 def _shapes() -> Graph:
-    return _parse(SHAPES_TTL)
+    return parse_turtle(SHAPES_TTL)
 
 
 @lru_cache(maxsize=1)
 def _schema() -> Graph:
-    return _parse(SCHEMA_TTL)
+    return parse_turtle(SCHEMA_TTL)
+
+
+@lru_cache(maxsize=8)
+def _kb(kb_ttl: str) -> Graph:
+    return parse_turtle(kb_ttl)
+
+
+@lru_cache(maxsize=8)
+def _kb_closed(kb_ttl: str) -> Graph:
+    return _close(_kb(kb_ttl))
 
 
 @lru_cache(maxsize=8)
 def _kb_results(kb_ttl: str) -> frozenset[tuple[str, ...]]:
-    return _results(_parse(kb_ttl))
+    return _results(_kb_closed(kb_ttl))
 
 
-def _results(facts: Graph) -> frozenset[tuple[str, ...]]:
-    """Close the facts under the schema, validate, and key each result so runs can be compared."""
+def _close(facts: Graph) -> Graph:
+    """A new graph: the schema and the facts, with everything OWL-RL infers from them."""
     data = Graph()
     data += _schema()
     data += facts
     owlrl.DeductiveClosure(
         owlrl.OWLRL_Semantics, axiomatic_triples=False, datatype_axioms=False
     ).expand(data)
+    return data
+
+
+def _results(data: Graph) -> frozenset[tuple[str, ...]]:
+    """Validate closed data and key each result so runs can be compared."""
     _conforms, report, _text = validate(data, shacl_graph=_shapes(), inference="none")
     keys = set()
     for result in report.subjects(RDF.type, SH.ValidationResult):

@@ -5,7 +5,6 @@ from collections import Counter
 import pytest
 
 from ontology_gate.graph import MAX_REPAIRS, build_graph, run_case
-from ontology_gate.ontology import RULE_MESSAGES
 
 
 @pytest.fixture(scope="module")
@@ -15,7 +14,7 @@ def defect():
 
 def test_duplicate_refund_is_paid_on_every_blocked_attempt(defect):
     run = run_case(defect, "duplicate-refund")
-    assert run.attempts == [("BLOCK", [RULE_MESSAGES[4]])] * MAX_REPAIRS
+    assert run.attempts == [("BLOCK", ["An order can be refunded only once."])] * MAX_REPAIRS
     assert run.escalated
     assert [entry["order_id"] for entry in run.ledger] == ["o1001"] * 3
     assert [entry["refund_id"] for entry in run.ledger] == [

@@ -101,8 +101,18 @@ run, so the output below is what you will see.
 
 The shop knows two customers (lena, omar), two managers (priya, who is also a customer, and
 marco), an AI agent (shopbot), four orders, and one refund that already exists: `rf1` on order
-`o1001`. The policy has five SHACL rules: an amount of at most 1000, a referenced order, a
-Manager as approver, an approver who is not the requester, and at most one refund per order.
+`o1001`. The policy has fifteen rules, and the gate checks them in three steps. The first step
+that finds a problem decides.
+
+1. **The proposal.** It describes exactly one refund, and nothing else: one subject, typed
+   `shop:Refund` only, with one order, one requester, one approver and one amount. A proposal
+   cannot add facts of its own, such as making its approver a Manager.
+2. **The knowledge base, before any closure.** The refund id is not in use, and the order, the
+   requester and the approver are already there. This comes before OWL-RL, which would type any
+   object of `forOrder` as an Order.
+3. **SHACL, after the OWL-RL closure.** An amount of at most 1000, an amount above 0, a named
+   order, a requester, an approver, a Manager as approver, an approver who is not the
+   requester, a requester who placed the order, and at most one refund per order.
 
 | case | first proposal | gate says | repair |
 |---|---|---|---|
@@ -239,6 +249,10 @@ How to read it:
     bypass, gebra.toml: none
       limit: gebra 0.2.0 has no gate-ordering rule of its own
   ```
+- **That the refund matches the request.** The gate does not see the case either. It checks the
+  proposal against the facts and the policy, so it would ALLOW a refund for more than the
+  customer asked for, or one on another customer's order where the requester is that order's
+  customer.
 - **That a declared bound is enforced.** The `uncapped` graph keeps the loop variant but its
   router ignores `MAX_REPAIRS`. gebra passes it, and the duplicate-refund case runs until
   LangGraph's recursion limit stops it.
@@ -285,6 +299,7 @@ Results vary between runs. The tests never use live mode.
 ```text
 src/ontology_gate/
   ontology.py   schema, knowledge base and SHACL shapes, as Turtle strings
+  door.py       shape_errors(proposal_ttl): one refund with its four fields, nothing else
   gate.py       gate(proposal_ttl, kb_ttl) -> GateResult(decision, violations)
   cases.py      the refund requests
   model.py      ScriptedModel (default) and LiveModel (optional)

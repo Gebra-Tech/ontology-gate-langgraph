@@ -5,7 +5,6 @@ from langgraph.errors import GraphRecursionError
 
 from ontology_gate.cases import DEMO_CASES
 from ontology_gate.graph import MAX_REPAIRS, build_graph, run_case
-from ontology_gate.ontology import RULE_MESSAGES
 
 
 @pytest.fixture(scope="module")
@@ -15,7 +14,10 @@ def correct():
 
 @pytest.mark.parametrize(
     ("case", "first_violation"),
-    [("agent-approves", RULE_MESSAGES[2]), ("self-approval", RULE_MESSAGES[3])],
+    [
+        ("agent-approves", "Only a Manager may approve a refund."),
+        ("self-approval", "The approver must not be the person who requested the refund."),
+    ],
 )
 def test_one_repair_then_one_refund(correct, case, first_violation):
     run = run_case(correct, case)
@@ -28,10 +30,10 @@ def test_one_repair_then_one_refund(correct, case, first_violation):
 
 def test_duplicate_refund_escalates_without_paying(correct):
     run = run_case(correct, "duplicate-refund")
-    assert run.attempts == [("BLOCK", [RULE_MESSAGES[4]])] * MAX_REPAIRS
+    assert run.attempts == [("BLOCK", ["An order can be refunded only once."])] * MAX_REPAIRS
     assert run.escalated
     assert run.ledger == []
-    assert run.state["violations"] == [RULE_MESSAGES[4]]
+    assert run.state["violations"] == ["An order can be refunded only once."]
 
 
 def test_no_order_is_refunded_twice(correct):
@@ -58,7 +60,7 @@ def test_bypass_pays_a_small_refund_without_the_gate():
     assert run.ledger == [{"case": "small-refund", "order_id": "o1004", "refund_id": "rf_o1004_1"}]
     # On the correct graph the same proposal is blocked: the approver is the AI agent.
     blocked = run_case(build_graph("correct"), "small-refund")
-    assert blocked.attempts[0] == ("BLOCK", [RULE_MESSAGES[2]])
+    assert blocked.attempts[0] == ("BLOCK", ["Only a Manager may approve a refund."])
 
 
 def test_unknown_variant_is_rejected():
